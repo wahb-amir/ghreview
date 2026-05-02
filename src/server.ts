@@ -3,12 +3,10 @@ import { Webhooks } from "@octokit/webhooks";
 import { getOctokit, postReview } from "./github.js";
 import { analyzeFile } from "./analysis.js";
 import { parseDiff } from "./diffParser.js";
-import type { WebhookEventName } from "@octokit/webhooks-types";
-
-
+import path from "path";
 import dotenv from "dotenv";
 
-dotenv.config();
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 const app = express();
 app.use(express.json({

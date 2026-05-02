@@ -5,7 +5,6 @@ import fs from "fs";
 import process from "process";
 import dotenv from "dotenv";
 import path from "path";
-import { fileURLToPath } from "url";
 
 // Get the directory name of the current module
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
