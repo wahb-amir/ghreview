@@ -9,15 +9,17 @@ import path from "path";
 // Get the directory name of the current module
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
-if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_WEBHOOK_SECRET) {
-  console.error("❌ Missing GITHUB_APP_ID or GITHUB_WEBHOOK_SECRET in .env");
+const { GITHUB_APP_ID, GITHUB_WEBHOOK_SECRET, GITHUB_PRIVATE_KEY } = process.env;
+
+if (!GITHUB_APP_ID || !GITHUB_WEBHOOK_SECRET || !GITHUB_PRIVATE_KEY) {
+  console.error("❌ Missing required GitHub environment variables");
   process.exit(1);
 }
 
 const app = new App({
-  appId: process.env.GITHUB_APP_ID,
-  privateKey: fs.readFileSync("./key/key.pem", "utf8"),
-  Octokit: Octokit,
+  appId: GITHUB_APP_ID,
+  privateKey: GITHUB_PRIVATE_KEY.replace(/\\n/g, "\n"),
+  Octokit,
 });
 
 export async function getOctokit(installationId: number): Promise<Octokit> {
