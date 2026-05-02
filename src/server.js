@@ -7,6 +7,7 @@ import { parseDiff } from "./diffParser.js";
 import dotenv from "dotenv";
 
 dotenv.config();
+
 const app = express();
 app.use(express.json());
 
@@ -17,9 +18,10 @@ const webhooks = new Webhooks({
 
 // 📡 Main webhook route
 app.post("/webhook", async (req, res) => {
-  try {
-    const event = req.headers["x-github-event"];
+  const event = req.headers["x-github-event"];
 
+  try {
+    // verify first
     await webhooks.verifyAndReceive({
       id: req.headers["x-github-delivery"],
       name: event,
@@ -27,7 +29,7 @@ app.post("/webhook", async (req, res) => {
       payload: JSON.stringify(req.body),
     });
 
-    // ⚠️ Always respond fast
+    // ✅ respond immediately after verification
     res.sendStatus(200);
   } catch (err) {
     console.error("❌ Webhook error:", err.message);
@@ -39,6 +41,12 @@ app.post("/webhook", async (req, res) => {
 webhooks.on("pull_request.opened", async ({ payload }) => {
   try {
     const { repository, pull_request, installation } = payload;
+
+    // 🛑 guard
+    if (!installation) {
+      console.log("⚠️ No installation ID found");
+      return;
+    }
 
     const owner = repository.owner.login;
     const repo = repository.name;
@@ -57,30 +65,37 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
 
     let files = filesRes.data;
 
-    // 🚧 Limit large PRs (IMPORTANT)
+    // 🚧 Limit large PRs
     if (files.length > 15) {
       files = files.sort((a, b) => b.changes - a.changes).slice(0, 5);
+
       console.log("⚠️ Large PR detected, limiting to top 5 files");
     }
 
-    // 🧠 Parse diff into structured format
+    // 🧠 Parse diff
     const changes = parseDiff(files);
+
+    if (changes.length === 0) {
+      console.log("ℹ️ No analyzable code changes");
+      return;
+    }
 
     console.log("🧾 Parsed Changes:");
     console.log(JSON.stringify(changes, null, 2));
 
-    // 🔍 NEW: Run AST analysis
+    // 🔍 AST analysis
     const findings = [];
 
     for (const change of changes) {
       try {
+        console.log("➡️ Analyzing:", change.file);
+
         const fileRes = await octokit.rest.repos.getContent({
           owner,
           repo,
           path: change.file,
         });
 
-        // skip if not a file
         if (fileRes.data.type !== "file") continue;
 
         const content = Buffer.from(fileRes.data.content, "base64").toString();
@@ -100,9 +115,6 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
     // 🔍 Final output
     console.log("🔍 Findings:");
     console.log(JSON.stringify(findings, null, 2));
-
-    console.log("🧾 Parsed Changes:");
-    console.log(JSON.stringify(changes, null, 2));
   } catch (err) {
     console.error("❌ PR handler error:", err);
   }
