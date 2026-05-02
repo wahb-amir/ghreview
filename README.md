@@ -1,3 +1,13 @@
+---
+title: GHReview Bot
+emoji: 🤖
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_file: src/server.ts
+pinned: false
+---
+
 # GHReview 🤖
 A repo-aware PR reviewer that starts deterministic and compounds with memory.
 
