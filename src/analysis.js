@@ -1,6 +1,8 @@
 // src/analysis.js
 import { parse } from "@babel/parser";
-import traverse from "@babel/traverse";
+import _traverse from "@babel/traverse";
+
+const traverse = _traverse.default || _traverse;
 
 export async function analyzeFile({
   filename,
@@ -24,7 +26,7 @@ export async function analyzeFile({
   traverse(ast, {
     CallExpression(path) {
       const callee = path.node.callee;
-      
+
       if (
         callee.type === "MemberExpression" &&
         callee.object.name === "console"
