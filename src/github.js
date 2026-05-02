@@ -21,3 +21,26 @@ const app = new App({
 export async function getOctokit(installationId) {
   return await app.getInstallationOctokit(installationId);
 }
+export async function postReview(octokit, { owner, repo, pull_number, findings }) {
+  if (findings.length === 0) return;
+
+  const comments = findings.map((f) => ({
+    path: f.file,
+    line: f.line,
+    body: `⚠️ **${f.rule}**: ${f.message}`,
+  }));
+
+  try {
+    await octokit.rest.pulls.createReview({
+      owner,
+      repo,
+      pull_number,
+      event: "COMMENT", // Per Phase 0.5 guidelines
+      body: "🚀 **GHReview Analysis**: I've scanned the changed files using AST-based deterministic rules.",
+      comments,
+    });
+    console.log(`✅ Review posted with ${findings.length} comments.`);
+  } catch (err) {
+    console.error("❌ Failed to post review:", err.message);
+  }
+}

@@ -1,11 +1,10 @@
 // src/server.js
 import express from "express";
 import { Webhooks } from "@octokit/webhooks";
-import { getOctokit } from "./github.js";
 import { analyzeFile } from "./analysis.js";
 import { parseDiff } from "./diffParser.js";
+import { getOctokit, postReview } from "./github.js"; // Import the new helper
 import dotenv from "dotenv";
-
 dotenv.config();
 
 const app = express();
@@ -124,6 +123,18 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
       } catch (err) {
         console.log(`❌ Analyze error in ${change.file}:`, err.message);
       }
+    }
+
+    if (findings.length > 0) {
+      await postReview(octokit, {
+        owner,
+        repo,
+        pull_number: prNumber,
+        findings,
+      });
+    } else {
+
+      console.log("No violations found. Skipping review.");
     }
 
     console.log("🔍 Findings:");
