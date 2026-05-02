@@ -32,7 +32,7 @@ app.post("/webhook", async (req, res) => {
         .receive({
           id: req.headers["x-github-delivery"],
           name: event,
-          payload: JSON.stringify(req.body),
+          payload: req.body, 
           signature,
         })
         .catch((err) => {
