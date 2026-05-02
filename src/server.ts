@@ -1,45 +1,88 @@
-// src/server.js
 import express from "express";
 import { Webhooks } from "@octokit/webhooks";
+import { getOctokit, postReview } from "./github.js";
 import { analyzeFile } from "./analysis.js";
 import { parseDiff } from "./diffParser.js";
-import { getOctokit, postReview } from "./github.js"; // Import the new helper
+import type { WebhookEventName } from "@octokit/webhooks-types";
+
+
 import dotenv from "dotenv";
+
 dotenv.config();
 
 const app = express();
-app.use(express.json());
+app.use(express.json({
+  verify: (req, _res, buf) => {
+    (req as any).rawBody = buf.toString();
+  },
+}));
+
+if (!process.env.GITHUB_APP_ID || !process.env.GITHUB_WEBHOOK_SECRET) {
+  console.error("❌ Missing GITHUB_APP_ID or GITHUB_WEBHOOK_SECRET in .env");
+  process.exit(1);
+}
 
 const webhooks = new Webhooks({
   secret: process.env.GITHUB_WEBHOOK_SECRET,
 });
 
+const getHeader = (val: string | string[] | undefined): string => {
+  if (Array.isArray(val)) return val[0];
+  return val ?? "";
+};
+
+const allowedEvents = [
+  "push",
+  "pull_request",
+  "issues",
+  "issue_comment",
+  "repository",
+] as const;
+
+type AllowedEvent = typeof allowedEvents[number];
+
+function isWebhookEventName(name: string): name is AllowedEvent {
+  return allowedEvents.includes(name as AllowedEvent);
+}
+
 app.post("/webhook", async (req, res) => {
-  const event = req.headers["x-github-event"];
-  const signature = req.headers["x-hub-signature-256"];
+  const event = getHeader(req.headers["x-github-event"]);
+  const signature = getHeader(req.headers["x-hub-signature-256"]);
+  const deliveryId = getHeader(req.headers["x-github-delivery"]);
+
+  if (!event || !signature) {
+    console.error("❌ Missing event or signature headers");
+    return res.sendStatus(400);
+  }
 
   try {
-    // Verify the signature first.
-    await webhooks.verify(JSON.stringify(req.body), signature);
-
-    // Respond immediately to GitHub.
+    await webhooks.verify((req as any).rawBody, signature);
     res.sendStatus(200);
 
-    // Process the event asynchronously after responding.
     setImmediate(() => {
-      void webhooks
-        .receive({
-          id: req.headers["x-github-delivery"],
-          name: event,
-          payload: req.body, 
-          signature,
-        })
-        .catch((err) => {
-          console.error("❌ Webhook processing error:", err.message);
-        });
+  if (!isWebhookEventName(event)) {
+    console.error("❌ Unsupported event:", event);
+    return;
+  }
+
+  void webhooks
+    .receive({
+      id: deliveryId,
+      name: event, // ✅ now properly typed
+      payload: req.body,
+    })
+    .catch((err) => {
+      console.error(
+        "❌ Webhook processing error:",
+        err instanceof Error ? err.message : String(err),
+      );
     });
+});
   } catch (err) {
-    console.error("❌ Webhook error:", err.message);
+    console.error(
+      "❌ Webhook error:",
+      err instanceof Error ? err.message : String(err),
+    );
     return res.sendStatus(401);
   }
 });
@@ -111,7 +154,9 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
           continue;
         }
 
-        const content = Buffer.from(fileRes.data.content, "base64").toString("utf8");
+        const content = Buffer.from(fileRes.data.content, "base64").toString(
+          "utf8",
+        );
 
         const fileFindings = await analyzeFile({
           filename: change.file,
@@ -121,7 +166,11 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
 
         findings.push(...fileFindings);
       } catch (err) {
-        console.log(`❌ Analyze error in ${change.file}:`, err.message);
+        if (err instanceof Error) {
+          console.log(err.message);
+        } else {
+          console.log("Unknown error:", err);
+        }
       }
     }
 
@@ -133,7 +182,6 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
         findings,
       });
     } else {
-
       console.log("No violations found. Skipping review.");
     }
 
