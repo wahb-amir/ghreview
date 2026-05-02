@@ -2,6 +2,7 @@
 import express from "express";
 import { Webhooks } from "@octokit/webhooks";
 import { getOctokit } from "./github.js";
+import { analyzeFile } from "./analysis.js";
 import { parseDiff } from "./diffParser.js";
 import dotenv from "dotenv";
 
@@ -64,6 +65,41 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
 
     // 🧠 Parse diff into structured format
     const changes = parseDiff(files);
+
+    console.log("🧾 Parsed Changes:");
+    console.log(JSON.stringify(changes, null, 2));
+
+    // 🔍 NEW: Run AST analysis
+    const findings = [];
+
+    for (const change of changes) {
+      try {
+        const fileRes = await octokit.rest.repos.getContent({
+          owner,
+          repo,
+          path: change.file,
+        });
+
+        // skip if not a file
+        if (fileRes.data.type !== "file") continue;
+
+        const content = Buffer.from(fileRes.data.content, "base64").toString();
+
+        const fileFindings = await analyzeFile({
+          filename: change.file,
+          content,
+          hunks: change.hunks,
+        });
+
+        findings.push(...fileFindings);
+      } catch (err) {
+        console.log(`⚠️ Failed to analyze ${change.file}`);
+      }
+    }
+
+    // 🔍 Final output
+    console.log("🔍 Findings:");
+    console.log(JSON.stringify(findings, null, 2));
 
     console.log("🧾 Parsed Changes:");
     console.log(JSON.stringify(changes, null, 2));
