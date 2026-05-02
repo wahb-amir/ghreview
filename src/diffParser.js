@@ -4,23 +4,36 @@ function parseHunks(patch) {
   const hunks = [];
 
   let currentHunk = null;
+  let currentLineNumber = 0;
 
   for (const line of lines) {
     if (line.startsWith("@@")) {
-      // Example: @@ -42,6 +42,10 @@
       const match = line.match(/\+(\d+),?(\d+)?/);
 
       if (match) {
+        const start = parseInt(match[1]);
+        const length = parseInt(match[2] || "1");
+
+        currentLineNumber = start;
+
         currentHunk = {
-          start: parseInt(match[1]),
-          end: parseInt(match[1]) + parseInt(match[2] || "1"),
-          content: "",
+          start,
+          end: start + length - 1,
+          lines: [], // 👈 changed
         };
+
         hunks.push(currentHunk);
       }
     } else if (currentHunk) {
       if (line.startsWith("+")) {
-        currentHunk.content += line + "\n";
+        currentHunk.lines.push({
+          lineNumber: currentLineNumber,
+          content: line.slice(1), // remove "+"
+        });
+        currentLineNumber++;
+      } else if (!line.startsWith("-")) {
+        // context line (not removed)
+        currentLineNumber++;
       }
     }
   }
@@ -34,11 +47,14 @@ function getLanguage(filename) {
   if (filename.endsWith(".py")) return "python";
   return null;
 }
+
+
 export function parseDiff(files) {
   const changes = [];
 
   for (const file of files) {
-    if (!file.patch) continue; // skip binary files
+    if (!file.patch) continue;
+
     const language = getLanguage(file.filename);
     if (!language) continue;
 
@@ -46,7 +62,7 @@ export function parseDiff(files) {
 
     changes.push({
       file: file.filename,
-      language: getLanguage(file.filename),
+      language,
       hunks,
     });
   }
