@@ -65,8 +65,6 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
 
     // 🧠 Parse diff into structured format
     const changes = parseDiff(files);
-    // 🧠 Parse diff into structured format
-    const changes = parseDiff(files);
 
     console.log("🧾 Parsed Changes:");
     console.log(JSON.stringify(changes, null, 2));
