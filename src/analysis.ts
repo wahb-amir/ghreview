@@ -1,10 +1,10 @@
 import { parse } from "@babel/parser";
-import * as _traverse from "@babel/traverse";
 import type { NodePath } from "@babel/traverse";
 import type { File, CallExpression } from "@babel/types";
 
-const traverse = (_traverse as any).default || _traverse;
-
+import _traverse from "@babel/traverse";
+// @ts-ignore
+const traverse = (_traverse.default || _traverse) as unknown as typeof _traverse.default;
 export interface Hunk {
   start: number;
   end: number;
