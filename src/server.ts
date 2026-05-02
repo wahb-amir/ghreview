@@ -190,6 +190,6 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
   }
 });
 
-app.listen(3000, () => {
-  console.log("🚀 Server running on port 3000");
+app.listen(7860, () => {
+  console.log("🚀 Server running on port 7860");
 });
