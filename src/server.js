@@ -11,38 +11,44 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-// 🔐 GitHub webhook verifier
 const webhooks = new Webhooks({
   secret: process.env.GITHUB_WEBHOOK_SECRET,
 });
 
-// 📡 Main webhook route
 app.post("/webhook", async (req, res) => {
   const event = req.headers["x-github-event"];
+  const signature = req.headers["x-hub-signature-256"];
 
   try {
-    // verify first
-    await webhooks.verifyAndReceive({
-      id: req.headers["x-github-delivery"],
-      name: event,
-      signature: req.headers["x-hub-signature-256"],
-      payload: JSON.stringify(req.body),
-    });
+    // Verify the signature first.
+    await webhooks.verify(JSON.stringify(req.body), signature);
 
-    // ✅ respond immediately after verification
+    // Respond immediately to GitHub.
     res.sendStatus(200);
+
+    // Process the event asynchronously after responding.
+    setImmediate(() => {
+      void webhooks
+        .receive({
+          id: req.headers["x-github-delivery"],
+          name: event,
+          payload: JSON.stringify(req.body),
+          signature,
+        })
+        .catch((err) => {
+          console.error("❌ Webhook processing error:", err.message);
+        });
+    });
   } catch (err) {
     console.error("❌ Webhook error:", err.message);
     return res.sendStatus(401);
   }
 });
 
-// 🎯 Handle PR opened event
 webhooks.on("pull_request.opened", async ({ payload }) => {
   try {
     const { repository, pull_request, installation } = payload;
 
-    // 🛑 guard
     if (!installation) {
       console.log("⚠️ No installation ID found");
       return;
@@ -56,7 +62,6 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
 
     const octokit = await getOctokit(installation.id);
 
-    // 🔍 Fetch changed files
     const filesRes = await octokit.rest.pulls.listFiles({
       owner,
       repo,
@@ -65,14 +70,11 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
 
     let files = filesRes.data;
 
-    // 🚧 Limit large PRs
     if (files.length > 15) {
       files = files.sort((a, b) => b.changes - a.changes).slice(0, 5);
-
       console.log("⚠️ Large PR detected, limiting to top 5 files");
     }
 
-    // 🧠 Parse diff
     const changes = parseDiff(files);
 
     if (changes.length === 0) {
@@ -83,7 +85,6 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
     console.log("🧾 Parsed Changes:");
     console.log(JSON.stringify(changes, null, 2));
 
-    // 🔍 AST analysis
     const findings = [];
 
     for (const change of changes) {
@@ -96,9 +97,22 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
           path: change.file,
         });
 
-        if (fileRes.data.type !== "file") continue;
+        if (Array.isArray(fileRes.data)) {
+          console.log("⚠️ Skipping directory:", change.file);
+          continue;
+        }
 
-        const content = Buffer.from(fileRes.data.content, "base64").toString();
+        if (fileRes.data.type !== "file") {
+          console.log("⚠️ Not a file:", change.file);
+          continue;
+        }
+
+        if (!fileRes.data.content) {
+          console.log("⚠️ No content found:", change.file);
+          continue;
+        }
+
+        const content = Buffer.from(fileRes.data.content, "base64").toString("utf8");
 
         const fileFindings = await analyzeFile({
           filename: change.file,
@@ -108,11 +122,10 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
 
         findings.push(...fileFindings);
       } catch (err) {
-        console.log(`⚠️ Failed to analyze ${change.file}`);
+        console.log(`❌ Analyze error in ${change.file}:`, err.message);
       }
     }
 
-    // 🔍 Final output
     console.log("🔍 Findings:");
     console.log(JSON.stringify(findings, null, 2));
   } catch (err) {
@@ -120,7 +133,6 @@ webhooks.on("pull_request.opened", async ({ payload }) => {
   }
 });
 
-// 🚀 Start server
 app.listen(3000, () => {
   console.log("🚀 Server running on port 3000");
 });
