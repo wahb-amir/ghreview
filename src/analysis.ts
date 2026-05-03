@@ -1,81 +1,82 @@
-import { parse } from "@babel/parser";
-import type { NodePath } from "@babel/traverse";
-import type { File, CallExpression } from "@babel/types";
+import { spawnSync } from "child_process";
 
-import _traverse from "@babel/traverse";
-// @ts-ignore
-const traverse = (_traverse.default || _traverse) as unknown as typeof _traverse.default;
-export interface Hunk {
-  start: number;
-  end: number;
-}
+type SemgrepResult = {
+  path: string;
+  start: { line: number };
+  check_id: string;
+  extra?: {
+    message?: string;
+    severity?: string;
+  };
+};
 
-export interface Finding {
-  file: string;
-  line: number;
-  rule: string;
-  severity: "warning" | "error" | "info";
-  message: string;
-}
-
-export interface AnalyzeFileInput {
-  filename: string;
-  content: string;
-  hunks: Hunk[];
-}
+type SemgrepJson = {
+  results?: SemgrepResult[];
+  errors?: unknown[];
+};
 
 export async function analyzeFile({
-  filename,
-  content,
-  hunks,
-}: AnalyzeFileInput): Promise<Finding[]> {
-  const findings: Finding[] = [];
-
-  let ast: File;
-
+  repoPath,
+  changedFiles,
+}: {
+  repoPath: string;
+  changedFiles: string[];
+}) {
   try {
-    ast = parse(content, {
-      sourceType: "module",
-      plugins: ["jsx", "typescript"],
-    }) as File;
-  } catch {
-    console.log(`⚠️ Failed to parse ${filename}`);
-    return findings;
+    if (changedFiles.length === 0) {
+      return [];
+    }
+
+    const semgrepArgs = [
+      "--config=rules/semgrep.yml",
+      "--json",
+      "--quiet",
+      ...changedFiles,
+    ];
+
+    const result = spawnSync("semgrep", semgrepArgs, {
+      cwd: repoPath,
+      encoding: "utf-8",
+      maxBuffer: 10 * 1024 * 1024,
+    });
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    const stdout = result.stdout?.trim();
+    if (!stdout) {
+      return [];
+    }
+
+    const parsed = JSON.parse(stdout) as SemgrepJson;
+
+    return (parsed.results ?? []).map((r) => ({
+      file: r.path,
+      line: r.start.line,
+      rule: r.check_id,
+      severity: normalizeSeverity(r.extra?.severity),
+      message: r.extra?.message ?? "Semgrep finding",
+    }));
+  } catch (err) {
+    console.log(
+      "Semgrep failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return [];
   }
-
-  traverse(ast, {
-    CallExpression(path: NodePath<CallExpression>) {
-      const callee = path.node.callee;
-
-      if (
-        callee.type === "MemberExpression" &&
-        !callee.computed &&
-        callee.object.type === "Identifier" &&
-        callee.object.name === "console" &&
-        callee.property.type === "Identifier" &&
-        callee.property.name === "log"
-      ) {
-        const loc = path.node.loc;
-        if (!loc) return;
-
-        const line = loc.start.line;
-
-        if (isInChangedRange(line, hunks)) {
-          findings.push({
-            file: filename,
-            line,
-            rule: "no-console-log",
-            severity: "warning",
-            message: "console.log found in changed code",
-          });
-        }
-      }
-    },
-  });
-
-  return findings;
 }
 
-function isInChangedRange(line: number, hunks: Hunk[]): boolean {
-  return hunks.some((h) => line >= h.start && line <= h.end);
+function normalizeSeverity(
+  severity?: string,
+): "warning" | "error" | "info" {
+  switch (severity?.toLowerCase()) {
+    case "error":
+      return "error";
+    case "info":
+      return "info";
+    case "warning":
+    default:
+      return "warning";
+  }
 }

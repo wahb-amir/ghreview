@@ -3,3 +3,37 @@
 node_modules/
 key
 test
+# Python virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Virtualenv metadata
+pyvenv.cfg
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs / editors
+.vscode/
+.idea/
+
+# Environment variables
+.env
+.env.*
